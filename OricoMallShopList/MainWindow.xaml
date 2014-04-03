@@ -7,7 +7,7 @@
         Width="{Binding WindowWidth}"
         Height="{Binding WindowHeight}"
         x:Name="mainWindow"
-        Loaded="mainWindow_Loaded">
+        Loaded="mainWindow_Loaded" Icon="Orico.ico">
 
     <Window.Resources>
         <Style x:Key="textInput">
