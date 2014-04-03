@@ -48,6 +48,27 @@ namespace OricoMallShopList
             }
         }
 
+        private int timeout = Properties.Settings.Default.Timeout;
+
+        public int Timeout
+        {
+            get
+            {
+                return this.timeout;
+            }
+            set
+            {
+                this.timeout = value < 0 ? 0 : value;
+                this.OnPropertyChanged("Timeout");
+
+                Task.Run(() =>
+                {
+                    Properties.Settings.Default.Timeout = value;
+                    Properties.Settings.Default.Save();
+                });
+            }
+        }
+
         private string execButtonText = "取得開始";
 
         /// <summary>
@@ -233,7 +254,6 @@ namespace OricoMallShopList
                 });
             }
         }
-
         
         public ICommand Start
         {
@@ -279,7 +299,7 @@ namespace OricoMallShopList
             this.ProgressValue = 0;
             this.IsProgress = true;
 
-            api.Start(browser, this.UserName, password);
+            api.Start(browser, this.UserName, password, this.Timeout * 1000);
         }
 
         private void SaveCommand()

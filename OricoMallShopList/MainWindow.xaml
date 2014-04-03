@@ -55,6 +55,18 @@
                 </Label>
 
                 <PasswordBox x:Name="passwordBox" PasswordChanged="passwordBox_PasswordChanged"/>
+                
+                <Label Target="{Binding ElementName=textBoxTimeout}"
+                       Margin="15,0,0,0">
+                    タイムアウト:
+                </Label>
+                
+                <TextBox x:Name="textBoxTimeout"
+                         Width="40"
+                         HorizontalContentAlignment="Right"
+                         Text="{Binding Timeout}"/>
+                
+                <TextBlock Text="秒" Margin="2,0,0,0"/>
             </StackPanel>
 
             <StackPanel Orientation="Horizontal"

@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Windows.Controls;
 using System.Windows.Navigation;
+using System.Timers;
 
 namespace OricoMallShopList
 {
@@ -19,6 +20,9 @@ namespace OricoMallShopList
         private List<Shop> ShopInfoLinks { get; set; }
         private List<Shop> ShopLinks { get; set; }
         private int ShopInfoIndex { get; set; }
+        private bool TimeoutEnabled { get; set; }
+        private Timer Timer { get; set; }
+        private LoadCompletedEventHandler TimeoutDelegate { get; set; }
 
         public EventHandler<string> Failure = (o, s) => { };
         public EventHandler<int> ProgressMaxChanged = (o, v) => { };
@@ -33,16 +37,25 @@ namespace OricoMallShopList
             this.ShopInfoLinks = null;
             this.ShopLinks = null;
             this.ShopInfoIndex = 0;
+
+            this.Timer = new Timer();
+            this.Timer.AutoReset = false; // 繰り返し無効
+            this.Timer.Elapsed += this.WebBrowserTimer_Elapsed;
         }
 
-        public void Start(WebBrowser browser, string userName, string password)
+        public void Start(WebBrowser browser, string userName, string password, int timeout)
         {
             this.Browser = browser;
             this.UserName = userName;
             this.Password = password;
-
+            
             this.ProgressMaxChanged(this, 0);
             this.ProgressValueChanged(this, 0);
+
+            if (timeout > 0) {
+                this.TimeoutEnabled = true;
+                this.Timer.Interval = timeout;
+            }
 
             this.Move(OricoMallTopUrl, this.MoveLoginPage);
         }
@@ -51,6 +64,13 @@ namespace OricoMallShopList
         {
             // イベントハンドラを削除
             this.EndMove(MoveLoginPage);
+
+            // タイムアウト
+            if (sender == null)
+            {
+                this.Failure(this, "タイムアウトになりました。");
+                return;
+            }
 
             // ログインボタンを取得
             var loginButton = this.Document.getElementsByClassName("btnLogin");
@@ -65,7 +85,7 @@ namespace OricoMallShopList
 
                     if (link.Count > 0)
                     {
-                        Browser.LoadCompleted += this.Login;
+                        this.Move(this.Login);
                         link[0].click();
                     }
 
@@ -132,6 +152,7 @@ namespace OricoMallShopList
             if (this.ShopInfoIndex == this.ShopInfoLinks.Count)
             {
                 this.End();
+                return;
             }
 
             ++this.ShopInfoIndex;
@@ -247,6 +268,22 @@ namespace OricoMallShopList
             this.Ended(this, this.ShopLinks);
         }
 
+        /// <summary>
+        /// タイムアウトの処理
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void WebBrowserTimer_Elapsed(object sender, ElapsedEventArgs e)
+        {
+            this.Browser.Dispatcher.Invoke(() =>
+            {
+                if (this.TimeoutDelegate != null)
+                {
+                    this.TimeoutDelegate(null, null);
+                }
+            });
+        }
+
         private mshtml.HTMLDocument Document
         {
             get
@@ -263,15 +300,31 @@ namespace OricoMallShopList
             }
         }
 
-        private void Move(string url, System.Windows.Navigation.LoadCompletedEventHandler handler)
+        private void Move(string url, LoadCompletedEventHandler handler)
         {
             this.Browser.LoadCompleted += handler;
-            this.Browser.Navigate(url);
+
+            if (!string.IsNullOrEmpty(url))
+            {
+                this.Browser.Navigate(url);
+            }
+
+            if (this.TimeoutEnabled)
+            {
+                this.TimeoutDelegate = handler;
+                this.Timer.Start();
+            }
+        }
+
+        private void Move(LoadCompletedEventHandler handler)
+        {
+            this.Move(null, handler);
         }
 
         private void EndMove(System.Windows.Navigation.LoadCompletedEventHandler handler)
         {
             this.Browser.LoadCompleted -= handler;
+            this.Timer.Stop();
         }
 
 
