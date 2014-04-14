@@ -1,0 +1,15 @@
+= Orico Mall Shop List =
+
+This is a web scraping tool to get shop data in JSON format from Orico Mall.<br />
+これは、オリコモールのショップ一覧を JSON 形式で取得するためのスクレイピングツールです。
+
+== Development environment ==
+* Visual Studio 2013
+* C# / .NET Framework 4.0.1 / WPF
+
+== License ==
+* MIT License
+* Copyright &copy; 2014 MIZUNE Pine.
+
+== Links ==
+* http://www.oricomall.com
