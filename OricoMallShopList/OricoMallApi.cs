@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Windows.Controls;
 using System.Windows.Navigation;
 using System.Timers;
-using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 
@@ -131,7 +130,6 @@ namespace OricoMallShopList
             if (shopList == null)
             {
                 this.Failure(this, "ショップ一覧の取得に失敗しました");
-                Debug.WriteLine(html);
                 return;
             }
 
