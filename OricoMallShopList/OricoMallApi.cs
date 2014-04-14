@@ -3,13 +3,16 @@ using System.Collections.Generic;
 using System.Windows.Controls;
 using System.Windows.Navigation;
 using System.Timers;
+using System.Diagnostics;
+using System.Threading.Tasks;
+using System.Runtime.InteropServices;
 
 namespace OricoMallShopList
 {
     /// <summary>
     /// オリコモールへアクセスし情報を取得するクラス
     /// </summary>
-    class OricoMallApi
+    class OricoMallApi : IDisposable
     {
         private const string OricoMallTopUrl = "http://www.oricomall.com";
         private const string OricoMallShopList = "http://www.oricomall.com/shop_list/indexed/";
@@ -21,15 +24,19 @@ namespace OricoMallShopList
         private List<Shop> ShopLinks { get; set; }
         private int ShopInfoIndex { get; set; }
         private bool TimeoutEnabled { get; set; }
-        private Timer Timer { get; set; }
-        private LoadCompletedEventHandler TimeoutDelegate { get; set; }
+        private Timer TimeoutTimer { get; set; }
+        private Timer ReadyStateTimer { get; set; }
+        private Action<bool> NextDelegate { get; set; }
+        private bool ReadyStateRedirect { get; set; }
+        private bool ReadyStateCompleted { get; set; }
+        private string ReadyStateUrl { get; set; }
 
         public EventHandler<string> Failure = (o, s) => { };
         public EventHandler<int> ProgressMaxChanged = (o, v) => { };
         public EventHandler<int> ProgressValueChanged = (o, v) => { };
         public EventHandler<int> LinkLengthChanged = (o, v) => { };
         public EventHandler<List<Shop>> Ended = (o, v) => { };
-        
+
         public OricoMallApi() {
             this.Browser = null;
             this.UserName = null;
@@ -37,15 +44,23 @@ namespace OricoMallShopList
             this.ShopInfoLinks = null;
             this.ShopLinks = null;
             this.ShopInfoIndex = 0;
+            this.NextDelegate = null;
 
-            this.Timer = new Timer();
-            this.Timer.AutoReset = false; // 繰り返し無効
-            this.Timer.Elapsed += this.WebBrowserTimer_Elapsed;
+            this.TimeoutTimer = new Timer();
+            this.TimeoutTimer.AutoReset = false; // 繰り返し無効
+            this.TimeoutTimer.Elapsed += this.TimeoutTimer_Elapsed;
+
+            this.ReadyStateTimer = new Timer();
+            this.ReadyStateTimer.AutoReset = true;
+            this.ReadyStateTimer.Interval = 10;
+            this.ReadyStateTimer.Elapsed += this.ReadyStateTimer_Elapsed;
         }
 
         public void Start(WebBrowser browser, string userName, string password, int timeout)
         {
             this.Browser = browser;
+            this.Browser.LoadCompleted += Browser_LoadCompleted;
+
             this.UserName = userName;
             this.Password = password;
             
@@ -54,19 +69,16 @@ namespace OricoMallShopList
 
             if (timeout > 0) {
                 this.TimeoutEnabled = true;
-                this.Timer.Interval = timeout;
+                this.TimeoutTimer.Interval = timeout;
             }
-
+            
             this.Move(OricoMallTopUrl, this.MoveLoginPage);
         }
 
-        private void MoveLoginPage(object sender, NavigationEventArgs e)
+        private void MoveLoginPage(bool isTimeout)
         {
-            // イベントハンドラを削除
-            this.EndMove(MoveLoginPage);
-
             // タイムアウト
-            if (sender == null)
+            if (isTimeout)
             {
                 this.Failure(this, "タイムアウトになりました。");
                 return;
@@ -99,20 +111,27 @@ namespace OricoMallShopList
                 else
                 {
                     // ログイン済みの場合
-                    this.Move(OricoMallShopList, this.GetShopList);
+                    this.Move(OricoMallShopList, this.GetShopList, isCompletedTiming: true);
                 }
             }
         }
 
-        private void GetShopList(object sender, NavigationEventArgs e)
+        private void GetShopList(bool isTimeout)
         {
-            this.EndMove(this.GetShopList);
+            // タイムアウト
+            if (isTimeout)
+            {
+                this.Failure(this, "タイムアウトになりました。");
+                return;
+            }
 
             var shopList = this.Document.getElementById("shop_list");
+            var html = this.Document.body.innerHTML;
 
             if (shopList == null)
             {
                 this.Failure(this, "ショップ一覧の取得に失敗しました");
+                Debug.WriteLine(html);
                 return;
             }
 
@@ -160,9 +179,14 @@ namespace OricoMallShopList
             this.Move(this.CurrentShop.OricoMallUrl, this.GetShopInfo);
         }
 
-        private void GetShopInfo(object sender, NavigationEventArgs e)
+        private void GetShopInfo(bool isTimeout)
         {
-            this.EndMove(this.GetShopInfo);
+            // タイムアウト
+            if (isTimeout)
+            {
+                this.GetShopInfoNext();
+                return;
+            }
 
             var linkArea = this.Document.getElementsByClassName("go2shop");
 
@@ -179,8 +203,8 @@ namespace OricoMallShopList
                         this.GetShopInfoNext();
                         return;
                     }
-                    
-                    this.Move(url, this.GetShopUrl);
+
+                    this.Move(url, this.GetShopUrl, true);
                 }
 
                 else
@@ -196,10 +220,15 @@ namespace OricoMallShopList
             }
         }
 
-        private void GetShopUrl(object sender, NavigationEventArgs e)
+        private void GetShopUrl(bool isTimeout)
         {
-            this.EndMove(this.GetShopUrl);
-
+            // タイムアウト
+            if (isTimeout)
+            {
+                this.GetShopInfoNext();
+                return;
+            }
+            
             var url = this.Browser.Source.AbsoluteUri;
             this.CurrentShop.Url = this.SanitizeShopUrl(url);
             this.CurrentShop.HostName = this.GetHostName(url);
@@ -210,16 +239,18 @@ namespace OricoMallShopList
             this.GetShopInfoNext();
         }
 
-        private void Login(object sender, NavigationEventArgs e)
+        private void Login(bool isTimeout)
         {
-            var browser = (WebBrowser)sender;
-            var document = (mshtml.HTMLDocument)browser.Document;
+            // タイムアウト
+            if (isTimeout)
+            {
+                this.Failure(this, "タイムアウトになりました。");
+                return;
+            }
 
-            this.EndMove(this.Login);
-
-            var loginId = document.getElementById("loginId");
-            var password = document.getElementById("password");
-            var captcha = document.getElementById("captchaString");
+            var loginId = this.Document.getElementById("loginId");
+            var password = this.Document.getElementById("password");
+            var captcha = this.Document.getElementById("captchaString");
 
             if (loginId != null && password != null && captcha != null)
             {
@@ -230,7 +261,7 @@ namespace OricoMallShopList
                 captcha.style.setAttribute("ime-mode", "active");
                 captcha.focus();
 
-                var loginButton = document.getElementById("connectLogin");
+                var loginButton = this.Document.getElementById("connectLogin");
 
                 captcha.attachEvent("onkeypress", (args) =>
                 {
@@ -238,7 +269,7 @@ namespace OricoMallShopList
                 });
 
                 // ログイン後の処理
-                browser.LoadCompleted += this.LoggedIn;
+                this.Move(this.LoggedIn);
             }
 
             else
@@ -247,16 +278,21 @@ namespace OricoMallShopList
             }
         }
 
-        private void LoggedIn(object sender, System.Windows.Navigation.NavigationEventArgs e)
+        private void LoggedIn(bool isTimeout)
         {
-            this.EndMove(this.LoggedIn);
+            // タイムアウト
+            if (isTimeout)
+            {
+                this.Failure(this, "タイムアウトになりました。");
+                return;
+            }
 
             var loginButtton = this.Document.getElementsByClassName("btn-em-01");
 
             // ログインが完了していない場合
             if (loginButtton.Count > 0)
             {
-                this.Login(sender, e);
+                this.Login(isTimeout);
                 return;
             }
 
@@ -273,15 +309,96 @@ namespace OricoMallShopList
         /// </summary>
         /// <param name="sender"></param>
         /// <param name="e"></param>
-        private void WebBrowserTimer_Elapsed(object sender, ElapsedEventArgs e)
+        private void TimeoutTimer_Elapsed(object sender, ElapsedEventArgs e)
         {
             this.Browser.Dispatcher.Invoke(() =>
             {
-                if (this.TimeoutDelegate != null)
+                if (this.NextDelegate != null)
                 {
-                    this.TimeoutDelegate(null, null);
+                    var next = this.NextDelegate;
+                    this.NextDelegate = null;
+
+                    next(true);
                 }
             });
+        }
+
+        /// <summary>
+        /// ロード状態監視タイマー
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void ReadyStateTimer_Elapsed(object sender, ElapsedEventArgs e)
+        {
+            try
+            {
+                this.Browser.Dispatcher.Invoke(() =>
+                {
+                    // 別スレッド実行なため、タイマーが既に停止していないか確認する
+                    if (this.ReadyStateTimer.Enabled)
+                    {
+                        var document = this.Browser.Document as mshtml.HTMLDocument;
+
+                        if (document != null)
+                        {
+                            // リダイレクトが有効な場合は、リダイレクトが完了しているか調べる
+                            if ((document.readyState == "interactive" || document.readyState == "complete") &&
+                                document.body != null &&
+                                this.CheckRedirectEnded())
+                            {
+                                this.ReadyStateTimer.Stop();
+
+                                if (this.NextDelegate != null && !this.ReadyStateCompleted)
+                                {
+                                    // 一度変数に格納しないと null が代入できない
+                                    // デリゲートを呼び出してから null 代入すると、
+                                    // デリゲート中から次のロード処理が実行し、正常に動作しない
+                                    var next = this.NextDelegate;
+                                    this.NextDelegate = null;
+
+                                    next(false); // 処理呼び出し
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+            catch (TaskCanceledException) { } // 急にタスクを中断するときの発生する例外
+        }
+
+        private bool CheckRedirectEnded()
+        {
+            if (this.ReadyStateRedirect)
+            {
+                var RedirectCheckUrl = "http://www.oricomall.com";
+
+                if (this.Browser.Source != null)
+                {
+                    var url = this.Browser.Source.AbsoluteUri;
+
+                    if (!url.StartsWith(RedirectCheckUrl))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+            else
+            {
+                return true;
+            }
+        }
+
+        private void Browser_LoadCompleted(object sender, NavigationEventArgs e)
+        {
+            if (this.Browser.Source.AbsoluteUri == this.ReadyStateUrl)
+            {
+                var next = this.NextDelegate;
+                this.NextDelegate = null;
+
+                next(false);
+            }                 
         }
 
         private mshtml.HTMLDocument Document
@@ -300,31 +417,36 @@ namespace OricoMallShopList
             }
         }
 
-        private void Move(string url, LoadCompletedEventHandler handler)
+        private void Move(string url, Action<bool> next, bool isRedirect = false, bool isCompletedTiming = false)
         {
-            this.Browser.LoadCompleted += handler;
+            // 移動後に実行する処理
+            this.NextDelegate = next;
+            this.ReadyStateRedirect = isRedirect;
+            this.ReadyStateCompleted = isCompletedTiming;
+            this.ReadyStateUrl = url;
+            
+            // タイムアウトが有効な場合
+            if (this.TimeoutEnabled)
+            {
+                this.TimeoutTimer.Start();
+            }
 
+            // 移動開始
             if (!string.IsNullOrEmpty(url))
             {
                 this.Browser.Navigate(url);
             }
 
-            if (this.TimeoutEnabled)
+            // 文書読み込みを待機
+            if (!isCompletedTiming)
             {
-                this.TimeoutDelegate = handler;
-                this.Timer.Start();
+                this.ReadyStateTimer.Start();
             }
         }
 
-        private void Move(LoadCompletedEventHandler handler)
+        private void Move(Action<bool> handler)
         {
             this.Move(null, handler);
-        }
-
-        private void EndMove(System.Windows.Navigation.LoadCompletedEventHandler handler)
-        {
-            this.Browser.LoadCompleted -= handler;
-            this.Timer.Stop();
         }
 
 
@@ -341,5 +463,73 @@ namespace OricoMallShopList
 
             return uri.Host;
         }
+
+        
+        #region Dispose Finalize パターン
+
+        /// <summary>
+        /// 既にDisposeメソッドが呼び出されているかどうかを表します。
+        /// </summary>
+        private bool disposed = false;
+
+        /// <summary>
+        /// ConsoleApplication1.DisposableClass1 によって使用されているすべてのリソースを解放します。
+        /// </summary>
+        public void Dispose()
+        {
+            GC.SuppressFinalize(this);
+            this.Dispose(true);
+        }
+
+        /// <summary>
+        /// ConsoleApplication1.DisposableClass1 クラスのインスタンスがGCに回収される時に呼び出されます。
+        /// </summary>
+        ~OricoMallApi()
+        {
+            this.Dispose(false);
+        }
+
+        /// <summary>
+        /// ConsoleApplication1.DisposableClass1 によって使用されているアンマネージ リソースを解放し、オプションでマネージ リソースも解放します。
+        /// </summary>
+        /// <param name="disposing">マネージ リソースとアンマネージ リソースの両方を解放する場合は true。アンマネージ リソースだけを解放する場合は false。 </param>
+        protected virtual void Dispose(bool disposing)
+        {
+            if (this.disposed)
+            {
+                return;
+            }
+            this.disposed = true;
+
+            if (disposing)
+            {
+                // マネージ リソースの解放処理をこの位置に記述します。
+                if (this.TimeoutTimer != null) { this.TimeoutTimer.Stop(); }
+                if (this.ReadyStateTimer != null) { this.ReadyStateTimer.Stop(); }
+            }
+            // アンマネージ リソースの解放処理をこの位置に記述します。
+        }
+
+        /// <summary>
+        /// 既にDisposeメソッドが呼び出されている場合、例外をスローします。
+        /// </summary>
+        /// <exception cref="System.ObjectDisposedException">既にDisposeメソッドが呼び出されています。</exception>
+        protected void ThrowExceptionIfDisposed()
+        {
+            if (this.disposed)
+            {
+                throw new ObjectDisposedException(this.GetType().FullName);
+            }
+        }
+
+        /// <summary>
+        /// Dispose Finalize パターンに必要な初期化処理を行います。
+        /// </summary>
+        private void InitializeDisposeFinalizePattern()
+        {
+            this.disposed = false;
+        }
+
+        #endregion
     }
 }
