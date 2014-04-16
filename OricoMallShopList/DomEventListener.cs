@@ -15,7 +15,7 @@ namespace OricoMallShopList
     public class DomEventHandler
     {
         [ComVisible(false)]
-        public delegate void Callback(object[] args);
+        public delegate bool Callback(object[] args);
 
         [ComVisible(false)]
         private Callback callback;
@@ -23,8 +23,7 @@ namespace OricoMallShopList
         [DispId(0)]
         public object Method(params object[] args)
         {
-            callback(args);
-            return Type.Missing; // Type.Missing is "undefined" in JavaScript
+            return callback(args); // Type.Missing is "undefined" in JavaScript
         }
 
         public DomEventHandler(Callback callback)

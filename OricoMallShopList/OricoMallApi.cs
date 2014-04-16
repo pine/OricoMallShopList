@@ -5,6 +5,7 @@ using System.Windows.Navigation;
 using System.Timers;
 using System.Threading.Tasks;
 using System.Runtime.InteropServices;
+using System.Diagnostics;
 
 namespace OricoMallShopList
 {
@@ -96,7 +97,7 @@ namespace OricoMallShopList
 
                     if (link.Count > 0)
                     {
-                        this.Move(this.Login);
+                        this.Move(null, this.Login, isCompletedTiming: true);
                         link[0].click();
                     }
 
@@ -256,14 +257,22 @@ namespace OricoMallShopList
                 password.setAttribute("value", this.Password);
 
                 // 日本語の画像認証なため、日本語入力を ON にする
-                captcha.style.setAttribute("ime-mode", "active");
                 captcha.focus();
 
                 var loginButton = this.Document.getElementById("connectLogin");
 
                 captcha.attachEvent("onkeypress", (args) =>
                 {
-                    loginButton.click();
+                    const int ENTER_KEY = 13;
+
+                    var e = args[0] as mshtml.IHTMLEventObj;
+
+                    if (e != null && e.keyCode == ENTER_KEY)
+                    {
+                        loginButton.click();
+                    }
+
+                    return true;
                 });
 
                 // ログイン後の処理
@@ -272,7 +281,7 @@ namespace OricoMallShopList
 
             else
             {
-                this.Failure(this, "ログインに失敗しました。");
+              //  this.Failure(this, "ログインに失敗しました。");
             }
         }
 
@@ -339,6 +348,8 @@ namespace OricoMallShopList
 
                         if (document != null)
                         {
+                            Debug.WriteLine(document.readyState);
+
                             // リダイレクトが有効な場合は、リダイレクトが完了しているか調べる
                             if ((document.readyState == "interactive" || document.readyState == "complete") &&
                                 document.body != null &&
@@ -390,12 +401,16 @@ namespace OricoMallShopList
 
         private void Browser_LoadCompleted(object sender, NavigationEventArgs e)
         {
-            if (this.Browser.Source.AbsoluteUri == this.ReadyStateUrl)
+            if (this.ReadyStateUrl == null ||
+                this.Browser.Source.AbsoluteUri == this.ReadyStateUrl)
             {
-                var next = this.NextDelegate;
-                this.NextDelegate = null;
+                if (this.NextDelegate != null)
+                {
+                    var next = this.NextDelegate;
+                    this.NextDelegate = null;
 
-                next(false);
+                    next(false);
+                }
             }                 
         }
 
