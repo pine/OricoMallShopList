@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.IO;
 using System.Runtime.Serialization.Json;
 using Microsoft.Win32;
+using Microsoft.WindowsAPICodePack.Taskbar;
 
 namespace OricoMallShopList
 {
@@ -101,9 +102,26 @@ namespace OricoMallShopList
             set
             {
                 this.isProgress = value;
+
                 this.OnPropertyChanged("IsProgress");
                 this.OnPropertyChanged("IsIndeterminate");
                 this.OnPropertyChanged("ProgressPercentage");
+
+                if (value == true)
+                {
+                    if (this.ProgressMaximum == 0)
+                    {
+                        TaskbarManager.Instance.SetProgressState(TaskbarProgressBarState.Indeterminate);
+                    }
+                    else
+                    {
+                        TaskbarManager.Instance.SetProgressState(TaskbarProgressBarState.Normal);
+                    }
+                }
+                else
+                {
+                    TaskbarManager.Instance.SetProgressState(TaskbarProgressBarState.NoProgress);
+                }
             }
         }
 
@@ -143,6 +161,12 @@ namespace OricoMallShopList
                 this.progressValue = value;
                 this.OnPropertyChanged("ProgressValue");
                 this.OnPropertyChanged("ProgressPercentage");
+
+                if (this.ProgressMaximum > 0)
+                {
+                    TaskbarManager.Instance.SetProgressState(TaskbarProgressBarState.Normal);
+                    TaskbarManager.Instance.SetProgressValue(value, this.ProgressMaximum);
+                }
             }
         }
 

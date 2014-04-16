@@ -281,7 +281,7 @@ namespace OricoMallShopList
 
             else
             {
-              //  this.Failure(this, "ログインに失敗しました。");
+               this.Failure(this, "ログインに失敗しました。");
             }
         }
 
@@ -348,8 +348,6 @@ namespace OricoMallShopList
 
                         if (document != null)
                         {
-                            Debug.WriteLine(document.readyState);
-
                             // リダイレクトが有効な場合は、リダイレクトが完了しているか調べる
                             if ((document.readyState == "interactive" || document.readyState == "complete") &&
                                 document.body != null &&
