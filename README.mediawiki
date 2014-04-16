@@ -5,7 +5,7 @@ This is a web scraping tool to get shop data in JSON format from Orico Mall.<br 
 
 == Development environment ==
 * Visual Studio 2013
-* C# / .NET Framework 4.0.1 / WPF
+* C# / .NET Framework 4.5 / WPF
 
 == License ==
 * MIT License
