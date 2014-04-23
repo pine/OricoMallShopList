@@ -328,11 +328,11 @@ namespace OricoMallShopList
 
         private void SaveCommand()
         {
-            var ofd = new OpenFileDialog();
-            ofd.DefaultExt = "json";
-            ofd.Filter = "JSON File (*.json)|*.json|すべてのファイル (*.*)|*.*";
+            var sfd = new SaveFileDialog();
+            sfd.DefaultExt = "json";
+            sfd.Filter = "JSON File (*.json)|*.json|すべてのファイル (*.*)|*.*";
 
-            var result = ofd.ShowDialog(Application.Current.MainWindow);
+            var result = sfd.ShowDialog(Application.Current.MainWindow);
 
             if (result.HasValue && result.Value)
             {
@@ -340,7 +340,7 @@ namespace OricoMallShopList
 
                 try
                 {
-                    using (var fs = new FileStream(ofd.FileName, FileMode.Create, FileAccess.Write))
+                    using (var fs = sfd.OpenFile())
                     {
                         serializer.WriteObject(fs, this.ShopLinks);
                     }
