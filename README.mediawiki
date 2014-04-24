@@ -11,5 +11,10 @@ This is a web scraping tool to get shop data in JSON format from Orico Mall.<br 
 * MIT License
 * Copyright &copy; 2014 MIZUNE Pine.
 
+== See also ==
+The application is a tool to generate the data of shops used by the following chrome extension.<br />
+このアプリケーションは、以下の Chrome 拡張機能で利用するショップ情報を生成するツールです。
+* https://github.com/pine613/OricoExtention
+
 == Links ==
 * http://www.oricomall.com
