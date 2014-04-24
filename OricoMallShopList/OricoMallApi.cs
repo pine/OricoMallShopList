@@ -29,6 +29,7 @@ namespace OricoMallShopList
         private Action<bool> NextDelegate { get; set; }
         private bool ReadyStateRedirect { get; set; }
         private bool ReadyStateCompleted { get; set; }
+        private bool ReadyStateUrlCheck { get; set; }
         private string ReadyStateUrl { get; set; }
 
         public EventHandler<string> Failure = (o, s) => { };
@@ -52,7 +53,7 @@ namespace OricoMallShopList
 
             this.ReadyStateTimer = new Timer();
             this.ReadyStateTimer.AutoReset = true;
-            this.ReadyStateTimer.Interval = 10;
+            this.ReadyStateTimer.Interval = 50;
             this.ReadyStateTimer.Elapsed += this.ReadyStateTimer_Elapsed;
         }
 
@@ -174,8 +175,7 @@ namespace OricoMallShopList
             }
 
             ++this.ShopInfoIndex;
-
-            this.Move(this.CurrentShop.OricoMallUrl, this.GetShopInfo);
+            this.Move(this.CurrentShop.OricoMallUrl, this.GetShopInfo, isUrlCheck: true);
         }
 
         private void GetShopInfo(bool isTimeout)
@@ -231,6 +231,8 @@ namespace OricoMallShopList
             var url = this.Browser.Source.AbsoluteUri;
             this.CurrentShop.Url = this.SanitizeShopUrl(url);
             this.CurrentShop.HostName = this.GetHostName(url);
+
+            Debug.WriteLine(this.CurrentShop.Url);
 
             this.ShopLinks.Add(this.CurrentShop);
             this.LinkLengthChanged(this, this.ShopLinks.Count);
@@ -325,6 +327,7 @@ namespace OricoMallShopList
                     var next = this.NextDelegate;
                     this.NextDelegate = null;
 
+                    this.Browser.Navigate("about:blank");
                     next(true);
                 }
             });
@@ -337,6 +340,22 @@ namespace OricoMallShopList
         /// <param name="e"></param>
         private void ReadyStateTimer_Elapsed(object sender, ElapsedEventArgs e)
         {
+            // デリゲートを呼び出す
+            Action callDelegate = () =>
+            {
+                if (this.NextDelegate != null && !this.ReadyStateCompleted)
+                {
+                    // 一度変数に格納しないと null が代入できない
+                    // デリゲートを呼び出してから null 代入すると、
+                    // デリゲート中から次のロード処理が実行し、正常に動作しない
+                    var next = this.NextDelegate;
+                    this.NextDelegate = null;
+
+                    this.TimeoutTimer.Stop();
+                    next(false); // 処理呼び出し
+                }
+            };
+
             try
             {
                 this.Browser.Dispatcher.Invoke(() =>
@@ -344,27 +363,34 @@ namespace OricoMallShopList
                     // 別スレッド実行なため、タイマーが既に停止していないか確認する
                     if (this.ReadyStateTimer.Enabled)
                     {
+                        // リダイレクトが有効な場合は、リダイレクトが完了しているか調べる
+                        if (this.CheckRedirectEnded())
+                        {
+                            callDelegate();
+                            return;
+                        }
+
                         var document = this.Browser.Document as mshtml.HTMLDocument;
 
                         if (document != null)
                         {
-                            // リダイレクトが有効な場合は、リダイレクトが完了しているか調べる
                             if ((document.readyState == "interactive" || document.readyState == "complete") &&
-                                document.body != null &&
-                                this.CheckRedirectEnded())
+                                document.documentElement != null &&
+                                (!this.ReadyStateRedirect || this.CheckRedirectEnded()) &&
+                                (!this.ReadyStateUrlCheck || this.CheckUrl()))
                             {
+                                try
+                                {
+                                    ((mshtml.IHTMLElement2)document.documentElement).doScroll("left");
+                                }
+                                catch (COMException)
+                                {
+                                    return;
+                                }
+
                                 this.ReadyStateTimer.Stop();
 
-                                if (this.NextDelegate != null && !this.ReadyStateCompleted)
-                                {
-                                    // 一度変数に格納しないと null が代入できない
-                                    // デリゲートを呼び出してから null 代入すると、
-                                    // デリゲート中から次のロード処理が実行し、正常に動作しない
-                                    var next = this.NextDelegate;
-                                    this.NextDelegate = null;
-
-                                    next(false); // 処理呼び出し
-                                }
+                                callDelegate();
                             }
                         }
                     }
@@ -391,10 +417,20 @@ namespace OricoMallShopList
 
                 return false;
             }
-            else
+
+            return false;
+        }
+
+        private bool CheckUrl()
+        {
+            if (this.ReadyStateUrlCheck)
             {
-                return true;
+                var url = this.Browser.Source.AbsoluteUri;
+
+                return url == this.ReadyStateUrl;
             }
+
+            return false;
         }
 
         private void Browser_LoadCompleted(object sender, NavigationEventArgs e)
@@ -407,6 +443,7 @@ namespace OricoMallShopList
                     var next = this.NextDelegate;
                     this.NextDelegate = null;
 
+                    this.TimeoutTimer.Stop();
                     next(false);
                 }
             }                 
@@ -428,17 +465,19 @@ namespace OricoMallShopList
             }
         }
 
-        private void Move(string url, Action<bool> next, bool isRedirect = false, bool isCompletedTiming = false)
+        private void Move(string url, Action<bool> next, bool isRedirect = false, bool isCompletedTiming = false, bool isUrlCheck = false)
         {
             // 移動後に実行する処理
             this.NextDelegate = next;
             this.ReadyStateRedirect = isRedirect;
             this.ReadyStateCompleted = isCompletedTiming;
+            this.ReadyStateUrlCheck = isUrlCheck;
             this.ReadyStateUrl = url;
             
             // タイムアウトが有効な場合
             if (this.TimeoutEnabled)
             {
+                this.TimeoutTimer.Stop();
                 this.TimeoutTimer.Start();
             }
 
