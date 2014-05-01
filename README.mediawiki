@@ -16,5 +16,9 @@ The application is a tool to generate the data of shops used by the following ch
 このアプリケーションは、以下の Chrome 拡張機能で利用するショップ情報を生成するツールです。
 * https://github.com/pine613/OricoExtention
 
+The application has forked to the following project.<br />
+このアプリケーションは、以下のプロジェクトへフォークしました。
+* https://github.com/pine613/PointMallScraper
+
 == Links ==
 * http://www.oricomall.com
