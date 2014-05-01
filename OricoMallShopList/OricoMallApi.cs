@@ -72,6 +72,10 @@ namespace OricoMallShopList
                 this.TimeoutEnabled = true;
                 this.TimeoutTimer.Interval = timeout;
             }
+            else
+            {
+                this.TimeoutEnabled = false;
+            }
             
             this.Move(OricoMallTopUrl, this.MoveLoginPage);
         }
