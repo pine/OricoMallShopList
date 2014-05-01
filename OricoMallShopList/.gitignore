@@ -1,5 +1,2 @@
-bin
-obj
-
-*.dll
+*.suo
 *.ico
